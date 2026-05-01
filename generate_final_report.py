@@ -1,9 +1,24 @@
 import os
 from docx import Document
-from docx.shared import Inches, Pt
+from docx.shared import Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 DIR_PATH = os.path.dirname(__file__)
+
+
+def add_paragraphs(doc, paragraphs):
+    for paragraph in paragraphs:
+        if paragraph:
+            doc.add_paragraph(paragraph)
+        else:
+            doc.add_paragraph('')
+
+
+def add_bullet_list(doc, items):
+    for item in items:
+        p = doc.add_paragraph(item, style='List Bullet')
+        p.paragraph_format.space_after = Inches(0.05)
+
 
 def generate_report():
     doc = Document()
@@ -122,9 +137,12 @@ def generate_report():
         "chatbot delivers a highly human-like and effective user experience."
     )
 
-    report_path = os.path.join(DIR_PATH, 'Nashad_Jewellers_Final_Report.docx')
+    report_path = os.path.join(DIR_PATH, 'Nashad_Jewellers_Final_Report_5000_Words.docx')
     doc.save(report_path)
-    print(f"Final report successfully generated at {report_path}")
+    full_text = ' '.join(p.text for p in doc.paragraphs if p.text)
+    word_count = len(full_text.split())
+    print(f'Final report successfully generated at {report_path}')
+    print(f'Estimated report word count: {word_count}')
 
 if __name__ == "__main__":
     generate_report()

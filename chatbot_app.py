@@ -235,11 +235,26 @@ if prompt := st.chat_input("Ask me about our jewelry..."):
             
             # Check for function calls
             if response_message.tool_calls:
-                st.session_state.messages.append(response_message)
+                tool_calls_dict = [
+                    {
+                        "id": tc.id,
+                        "type": tc.type,
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments
+                        }
+                    }
+                    for tc in response_message.tool_calls
+                ]
+                st.session_state.messages.append({
+                    "role": response_message.role,
+                    "content": response_message.content,
+                    "tool_calls": tool_calls_dict
+                })
                 
-                for tool_call in response_message.tool_calls:
-                    function_name = tool_call.function.name
-                    function_args = json.loads(tool_call.function.arguments)
+                for tool_call in tool_calls_dict:
+                    function_name = tool_call["function"]["name"]
+                    function_args = json.loads(tool_call["function"]["arguments"])
                     
                     if function_name == "search_products":
                         function_response = search_products(**function_args)
@@ -253,7 +268,7 @@ if prompt := st.chat_input("Ask me about our jewelry..."):
                         function_response = "Unknown function call."
                         
                     st.session_state.messages.append({
-                        "tool_call_id": tool_call.id,
+                        "tool_call_id": tool_call["id"],
                         "role": "tool",
                         "name": function_name,
                         "content": function_response,
