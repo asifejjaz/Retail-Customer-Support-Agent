@@ -29,14 +29,14 @@ def search_products(query: str, max_price: float = None) -> str:
         query = query[:-1]
     words = query.split()
     
-    # Build WHERE clause for each word in name, category, description
+    # Build WHERE clause: AND for each word (product must match all words)
     conditions = []
     params = []
     for word in words:
         conditions.append("(LOWER(name) LIKE ? OR LOWER(category) LIKE ? OR LOWER(description) LIKE ?)")
         params.extend([f"%{word}%", f"%{word}%", f"%{word}%"])
     
-    sql = f"SELECT id, name, category, price, stock, description, product_url, image_url FROM products WHERE {' OR '.join(conditions)}"
+    sql = f"SELECT id, name, category, price, stock, description, product_url, image_url FROM products WHERE {' AND '.join(conditions)}"
     
     if max_price:
         sql += " AND price <= ?"
