@@ -1,7 +1,8 @@
 import streamlit as st
-import sqlite3
 import os
 import json
+import sqlite3
+import numpy as np
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -10,7 +11,7 @@ load_dotenv()
 # Configuration
 API_KEY = os.environ.get("OPENAI_API_KEY")
 MODEL = "gpt-4o-mini"
-DB_PATH = os.path.join(os.path.dirname(__file__), 'jewelry_store.db')
+DB_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'jewelry_store.db')
 
 client = OpenAI(
     api_key=API_KEY,
@@ -18,28 +19,29 @@ client = OpenAI(
 
 # Database Helpers
 def search_products(query: str, max_price: float = None) -> str:
-    """Searches the jewelry database for products matching the query."""
+    """Searches the database for jewelry products matching the query."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    sql = "SELECT id, name, category, price, stock FROM products WHERE (name LIKE ? OR category LIKE ?)"
-    params = [f"%{query}%", f"%{query}%"]
+    sql = "SELECT id, name, category, price, stock, description, product_url, image_url FROM products WHERE (name LIKE ? OR category LIKE ? OR description LIKE ?)"
+    params = [f"%{query}%", f"%{query}%", f"%{query}%"]
     
     if max_price:
         sql += " AND price <= ?"
         params.append(max_price)
         
+    sql += " LIMIT 5"
     cursor.execute(sql, params)
     results = cursor.fetchall()
     conn.close()
     
     if not results:
-        return "No products found matching your criteria."
-    
-    formatted = "Found the following products:\n"
+        return "No products found matching that description."
+        
+    response = "Products found:\n"
     for r in results:
-        formatted += f"- ID: {r[0]}, Name: {r[1]}, Category: {r[2]}, Price: £{r[3]}, Stock: {r[4]}\n"
-    return formatted
+        response += f"- ID: {r[0]}, Name: {r[1]}, Category: {r[2]}, Price: £{r[3]}, Stock: {r[4]}\n  Description: {r[5]}\n  URL: {r[6]}\n  Image: {r[7]}\n"
+    return response
 
 def place_order(product_id: int, customer_name: str, customer_address: str) -> str:
     """Places an order for a product."""
@@ -77,6 +79,40 @@ def place_order(product_id: int, customer_name: str, customer_address: str) -> s
 def get_helpline(issue_type: str) -> str:
     """Provides contact details for returns or other complex issues."""
     return "For returns or complex inquiries, please contact our helpline at 1-800-NASHAD (1-800-627-423) or email support@nashadjewellers.com."
+
+def search_knowledge_base(query: str) -> str:
+    """Searches the store's knowledge base for policies, guides, and store information."""
+    try:
+        response = client.embeddings.create(input=query, model="text-embedding-3-small")
+        query_emb = np.array(response.data[0].embedding)
+        
+        kb_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'knowledge_base.db')
+        conn = sqlite3.connect(kb_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT url, chunk_text, embedding_json FROM documents")
+        rows = cursor.fetchall()
+        conn.close()
+        
+        if not rows: return "Knowledge base is empty."
+            
+        results = []
+        for url, chunk_text, emb_json in rows:
+            doc_emb = np.array(json.loads(emb_json))
+            similarity = np.dot(query_emb, doc_emb) / (np.linalg.norm(query_emb) * np.linalg.norm(doc_emb))
+            results.append((similarity, url, chunk_text))
+            
+        results.sort(key=lambda x: x[0], reverse=True)
+        top_chunks = results[:3]
+        
+        if top_chunks[0][0] < 0.2:
+            return "I couldn't find specific information about that in our knowledge base."
+            
+        formatted_result = ""
+        for sim, url, text in top_chunks:
+            formatted_result += f"[From {url}]:\n{text}\n\n"
+        return formatted_result.strip()
+    except Exception as e:
+        return f"Error searching knowledge base: {e}"
 
 # Tools schema for OpenAI
 tools = [
@@ -142,6 +178,23 @@ tools = [
                 "required": ["issue_type"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_knowledge_base",
+            "description": "Search the Nashad Jewellers knowledge base for information about policies, store locations, safety deposit boxes, diamonds, and other informational pages.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The specific question or search term to look up."
+                    }
+                },
+                "required": ["query"]
+            }
+        }
     }
 ]
 
@@ -153,7 +206,7 @@ st.markdown("Welcome to Nashad Jewellers! How can we make your day sparkle?")
 
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {"role": "system", "content": "You are a welcoming and highly empathetic customer service assistant for Nashad Jewellers. Introduce yourself briefly when saying hello. Explain that you can help customers search for beautiful jewelry (rings, bracelets, necklaces) and assist them in placing orders. Always match the user's emotional tone and use emojis if the user does to make them feel understood. You can search products, take orders, and refer complex issues or returns to the helpline."}
+        {"role": "system", "content": "You are a welcoming and highly empathetic customer service assistant for Nashad Jewellers. Introduce yourself briefly when saying hello. Explain that you can help customers search for beautiful jewelry (rings, bracelets, necklaces) and assist them in placing orders. Always match the user's emotional tone. IMPORTANT: Only use emojis in your responses if the user has used emojis in their message; otherwise, your default mode must be completely emoji-free. When showing products, YOU MUST use Markdown to display the product image like this: ![Product Name](image_url) and provide the direct URL so they can buy it! You can search products, take orders, and refer complex issues or returns to the helpline."}
     ]
 
 # Display chat messages (skip system prompt)
@@ -194,6 +247,8 @@ if prompt := st.chat_input("Ask me about our jewelry..."):
                         function_response = place_order(**function_args)
                     elif function_name == "get_helpline":
                         function_response = get_helpline(**function_args)
+                    elif function_name == "search_knowledge_base":
+                        function_response = search_knowledge_base(**function_args)
                     else:
                         function_response = "Unknown function call."
                         

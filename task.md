@@ -1,0 +1,5 @@
+- `[/]` Create `build_knowledge_base.py` to scrape URLs, generate embeddings, and save to SQLite.
+- `[ ]` Install `numpy` and add to `requirements.txt`.
+- `[ ]` Update `chatbot_app.py` to include `search_knowledge_base` tool and remove `check_store_policy`.
+- `[ ]` Run `build_knowledge_base.py` to populate `knowledge_base.db`.
+- `[ ]` Write `walkthrough.md`.

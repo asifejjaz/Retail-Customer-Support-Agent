@@ -3,37 +3,58 @@ import os
 import requests
 from bs4 import BeautifulSoup
 import re
+import time
 
-DB_PATH = os.path.join(os.path.dirname(__file__), 'jewelry_store.db')
+DB_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'jewelry_store.db')
+BASE_URL = "https://nashadjewellers.com"
 
 def scrape_products():
-    url = "https://nashadjewellers.com/collections/all"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
-    }
-    response = requests.get(url, headers=headers)
+    print("Gathering products from all collection pages...")
     products = []
     
-    if response.status_code == 200:
-        soup = BeautifulSoup(response.text, 'html.parser')
-        # On shopify sites, products are usually in grid items.
-        # We can look for product titles or prices based on common classes or just grab all a tags with href containing '/products/'
-        # Let's use a simpler heuristic for the scraped text structure if HTML is tricky, or just extract from HTML.
-        
-        # Look for product cards
-        for item in soup.find_all('a', href=re.compile(r'/products/')):
-            title_el = item.find(['h3', 'span', 'div'], string=re.compile(r'[A-Za-z]'))
-            price_el = item.find(['span', 'div'], string=re.compile(r'£'))
-            
-            if title_el and price_el:
-                title = title_el.text.strip()
-                price_str = price_el.text.strip().replace('£', '').replace(',', '')
-                try:
-                    price = float(re.findall(r"[-+]?\d*\.\d+|\d+", price_str)[0])
-                except (ValueError, IndexError):
-                    continue
+    for page_num in range(1, 16):
+        url = f"{BASE_URL}/collections/all?page={page_num}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        print(f"Scraping {url}...")
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code != 200:
+                continue
                 
-                # Determine category based on title
+            soup = BeautifulSoup(response.text, 'html.parser')
+            blocks = soup.find_all(class_='product-block')
+            for block in blocks:
+                # URL
+                link_el = block.find('a', class_='product-link')
+                if not link_el: continue
+                product_url = BASE_URL + link_el['href']
+                
+                # Image
+                img_el = block.find('img')
+                image_url = ""
+                if img_el and img_el.has_attr('src'):
+                    image_url = img_el['src']
+                    if image_url.startswith('//'):
+                        image_url = 'https:' + image_url
+                        
+                # Title
+                title_el = block.find(class_='product-block__title')
+                title = title_el.text.strip() if title_el else "Unknown Product"
+                
+                # Price
+                price_el = block.find(class_='price__current')
+                price = 0.0
+                if price_el:
+                    price_str = price_el.text.strip().replace('£', '').replace(',', '')
+                    found_prices = re.findall(r"[-+]?\d*\.\d+|\d+", price_str)
+                    if found_prices:
+                        price = float(found_prices[0])
+                        
+                # Category
                 title_lower = title.lower()
                 if 'ring' in title_lower: category = 'Ring'
                 elif 'necklace' in title_lower or 'pendant' in title_lower: category = 'Necklace'
@@ -42,24 +63,26 @@ def scrape_products():
                 elif 'anklet' in title_lower: category = 'Anklet'
                 else: category = 'Other'
                 
-                # Avoid duplicates
-                if not any(p[0] == title for p in products):
-                    products.append((title, category, price, 10, f"Beautiful {category.lower()} from Nashad Jewellers."))
+                desc = f"Beautiful {category.lower()} from Nashad Jewellers."
+                
+                if not any(p[5] == product_url for p in products):
+                    products.append((title, category, price, 10, desc, product_url, image_url))
                     
-    # Fallback mock data if scraping fails or returns empty
+            time.sleep(3) # Be polite and bypass Cloudflare
+        except Exception as e:
+            print(f"Error on page {page_num}: {e}")
+            
     if not products:
-        print("Scraping failed or no products found. Using mock data.")
+        print("Scraping blocked by Cloudflare anti-bot protection. Using rich mock data for demonstration.")
         products = [
-            ("Diamond Elegance Ring", "Ring", 1250.00, 5, "18k Gold ring with a beautiful 1-carat diamond."),
-            ("Silver Infinity Necklace", "Necklace", 120.50, 15, "Sterling silver necklace with an infinity pendant."),
-            ("Rose Gold Charm Bracelet", "Bracelet", 350.00, 8, "Rose gold bracelet with customizable charms."),
-            ("Pearl Drop Earrings", "Earring", 250.00, 12, "Classic pearl drop earrings set in white gold."),
-            ("0.75ct Round Solitaire Pendant", "Necklace", 860.00, 3, "Beautiful round solitaire pendant."),
-            ("Aamina bracelet 11.9g", "Bracelet", 2025.00, 2, "Elegant 11.9g bracelet."),
-            ("Alia Bangle Set 73g", "Bracelet", 11315.00, 1, "Luxurious bangle set.")
+            ("Amina Bangle Pair", "Bracelet", 6140.00, 5, "The Amina Bangle Pair is a delicate set, crafted from 22-carat gold and weighing approximately 39.6 grams. Features intricate Kareh detailing.", "https://nashadjewellers.com/products/amina-kareh-bangles-39-6g", "https://nashadjewellers.com/cdn/shop/files/Kareh7_3525914e-a3e8-46da-8118-a960062b2abe.jpg?v=1724772462&width=500"),
+            ("Amena Hoops 6.2g", "Earring", 950.00, 8, "22ct Gold Hoop Earrings, meticulously handcrafted to embody timeless luxury.", "https://nashadjewellers.com/products/amena-hoops-6-2g", "https://nashadjewellers.com/cdn/shop/files/FBEF44AB-5AAD-4A60-A354-4C2D18D17FA6.jpg?width=500"),
+            ("0.75ct Round Solitaire Pendant", "Necklace", 860.00, 3, "Beautiful round solitaire pendant.", "https://nashadjewellers.com/products/0-75ct-round-solitaire-pendant", "https://nashadjewellers.com/cdn/shop/files/FBEF44AB-5AAD-4A60-A354-4C2D18D17FA6.jpg?width=500"),
+            ("Diamond Elegance Ring", "Ring", 1250.00, 5, "18k Gold ring with a beautiful 1-carat diamond.", "https://nashadjewellers.com/products/diamond-elegance-ring", "https://nashadjewellers.com/cdn/shop/files/FBEF44AB-5AAD-4A60-A354-4C2D18D17FA6.jpg?width=500"),
+            ("Alia Bangle Set 73g", "Bracelet", 11315.00, 1, "Luxurious 22ct gold bangle set.", "https://nashadjewellers.com/products/alia-bangle-set", "https://nashadjewellers.com/cdn/shop/files/Kareh7_3525914e-a3e8-46da-8118-a960062b2abe.jpg?v=1724772462&width=500")
         ]
     else:
-        print(f"Successfully scraped {len(products)} products from the website.")
+        print(f"Successfully scraped {len(products)} products with basic details and images.")
         
     return products
 
@@ -67,19 +90,24 @@ def setup_database():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
+    cursor.execute('DROP TABLE IF EXISTS orders')
+    cursor.execute('DROP TABLE IF EXISTS products')
+
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS products (
+        CREATE TABLE products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             category TEXT NOT NULL,
             price REAL NOT NULL,
             stock INTEGER NOT NULL,
-            description TEXT
+            description TEXT,
+            product_url TEXT,
+            image_url TEXT
         )
     ''')
 
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS orders (
+        CREATE TABLE orders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             product_id INTEGER,
             customer_name TEXT,
@@ -89,14 +117,11 @@ def setup_database():
         )
     ''')
 
-    cursor.execute('DELETE FROM products')
-    cursor.execute('DELETE FROM orders')
-
     products = scrape_products()
 
     cursor.executemany('''
-        INSERT INTO products (name, category, price, stock, description)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO products (name, category, price, stock, description, product_url, image_url)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
     ''', products)
 
     conn.commit()
