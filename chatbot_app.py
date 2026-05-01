@@ -23,7 +23,12 @@ def search_products(query: str, max_price: float = None) -> str:
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    sql = "SELECT id, name, category, price, stock, description, product_url, image_url FROM products WHERE (name LIKE ? OR category LIKE ? OR description LIKE ?)"
+    # Normalize query: lowercase and remove trailing 's' if not 'ss'
+    query = query.lower().strip()
+    if query.endswith('s') and not query.endswith('ss'):
+        query = query[:-1]
+    
+    sql = "SELECT id, name, category, price, stock, description, product_url, image_url FROM products WHERE (LOWER(name) LIKE ? OR LOWER(category) LIKE ? OR LOWER(description) LIKE ?)"
     params = [f"%{query}%", f"%{query}%", f"%{query}%"]
     
     if max_price:
