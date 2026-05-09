@@ -42,7 +42,7 @@ def search_products(query: str, max_price: float = None) -> str:
         sql += " AND price <= ?"
         params.append(max_price)
         
-    sql += " LIMIT 5"
+    sql += " LIMIT 9"  # Increased limit for grid display
     cursor.execute(sql, params)
     results = cursor.fetchall()
     conn.close()
@@ -50,10 +50,21 @@ def search_products(query: str, max_price: float = None) -> str:
     if not results:
         return "No products found matching that description."
         
-    response = "Products found:\n"
+    # Return structured data for grid display
+    products = []
     for r in results:
-        response += f"- ID: {r[0]}, Name: {r[1]}, Category: {r[2]}, Price: £{r[3]}, Stock: {r[4]}\n  Description: {r[5]}\n  URL: {r[6]}\n  Image: {r[7]}\n"
-    return response
+        products.append({
+            "id": r[0],
+            "name": r[1],
+            "category": r[2],
+            "price": r[3],
+            "stock": r[4],
+            "description": r[5],
+            "product_url": r[6],
+            "image_url": r[7]
+        })
+    
+    return "GRID_DISPLAY:" + json.dumps(products)
 
 def place_order(product_id: int, customer_name: str, customer_address: str) -> str:
     """Places an order for a product."""
@@ -210,6 +221,26 @@ tools = [
     }
 ]
 
+def display_product_grid(products):
+    """Display products in a grid layout with 3 items per row."""
+    if not products:
+        return
+    
+    # Create rows of 3 columns each
+    for i in range(0, len(products), 3):
+        cols = st.columns(3)
+        for j in range(3):
+            if i + j < len(products):
+                product = products[i + j]
+                with cols[j]:
+                    st.image(product["image_url"], width=150, caption=product["name"])
+                    st.write(f"**£{product['price']}**")
+                    st.write(f"Category: {product['category']}")
+                    st.write(f"Stock: {product['stock']}")
+                    if st.button(f"View Details - ID: {product['id']}", key=f"view_{product['id']}"):
+                        st.markdown(f"[Buy Now]({product['product_url']})")
+                        st.write(f"Description: {product['description']}")
+
 # Streamlit App
 st.set_page_config(page_title="Nashad Jewellers Assistant", page_icon="💎")
 
@@ -218,7 +249,7 @@ st.markdown("Welcome to Nashad Jewellers! How can we make your day sparkle?")
 
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {"role": "system", "content": "You are a welcoming and highly empathetic customer service assistant for Nashad Jewellers. Introduce yourself briefly when saying hello. Explain that you can help customers search for beautiful jewelry (rings, bracelets, necklaces) and assist them in placing orders. Always match the user's emotional tone. IMPORTANT: Only use emojis in your responses if the user has used emojis in their message; otherwise, your default mode must be completely emoji-free. When showing products, YOU MUST use Markdown to display the product image like this: ![Product Name](image_url) and provide the direct URL so they can buy it! You can search products, take orders, and refer complex issues or returns to the helpline. CRITICAL: For any user query related to finding, browsing, or inquiring about jewelry products (e.g., 'show me rings', 'gold necklaces under 5000'), ALWAYS use the search_products function. Extract the relevant search terms from the query as the 'query' parameter (e.g., 'gold rings'). If a price limit is mentioned (e.g., 'under 10000'), use it as 'max_price'. If the query is too vague, use a broad term like 'jewelry' or ask for clarification in your response before searching. Never refuse to help with product searches; always attempt to search using the tools available."}
+        {"role": "system", "content": "You are a welcoming and highly empathetic customer service assistant for Nashad Jewellers. Introduce yourself briefly when saying hello. Explain that you can help customers search for beautiful jewelry (rings, bracelets, necklaces) and assist them in placing orders. Always match the user's emotional tone. IMPORTANT: Only use emojis in your responses if the user has used emojis in their message; otherwise, your default mode must be completely emoji-free. When products are searched, they will be displayed in a grid automatically - do not describe individual products or use any image syntax. You can search products, take orders, and refer complex issues or returns to the helpline. CRITICAL: For any user query related to finding, browsing, or inquiring about jewelry products (e.g., 'show me rings', 'gold necklaces under 5000'), ALWAYS use the search_products function. Extract the relevant search terms from the query as the 'query' parameter (e.g., 'gold rings'). If a price limit is mentioned (e.g., 'under 10000'), use it as 'max_price'. If the query is too vague, use a broad term like 'jewelry' or ask for clarification in your response before searching. Never refuse to help with product searches; always attempt to search using the tools available."}
     ]
 
 # Display chat messages (skip system prompt)
@@ -270,6 +301,14 @@ if prompt := st.chat_input("Ask me about our jewelry..."):
                     
                     if function_name == "search_products":
                         function_response = search_products(**function_args)
+                        if function_response.startswith("GRID_DISPLAY:"):
+                            grid_data = function_response.split("GRID_DISPLAY:", 1)[1]
+                            try:
+                                products = json.loads(grid_data)
+                                display_product_grid(products)
+                                function_response = f"Found {len(products)} products matching your search. They're displayed in the grid above."
+                            except json.JSONDecodeError:
+                                pass  # Keep original response
                     elif function_name == "place_order":
                         function_response = place_order(**function_args)
                     elif function_name == "get_helpline":
