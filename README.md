@@ -11,6 +11,9 @@ A professional-grade AI-powered customer support chatbot for Nashad Jewellers. B
 - 📈 **Analytics**: Chart generation and performance tracking
 - 🗄️ **Database**: 360+ jewelry products with full details
 
+
+<img width="797" height="922" alt="Retail Store" src="https://github.com/user-attachments/assets/73426099-7db9-4384-8a38-342b6e11196e" />
+
 ## Project Structure
 
 ```
